@@ -1,4 +1,4 @@
-﻿// Copyright (c) MASA Stack All rights reserved.
+// Copyright (c) MASA Stack All rights reserved.
 // Licensed under the Apache License. See LICENSE.txt in the project root for license information.
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,9 +25,12 @@ bool isPgsql = string.Equals(dbModel.DbType, "postgresql", StringComparison.Curr
 var publicConfiguration = builder.Services.GetMasaConfiguration().ConfigurationApi.GetPublic();
 StackExchangeRedisInstrumentation redisInstrumentation = default!;
 
-var ossSptions = publicConfiguration.GetSection(DccConstants.OssKey).Get<OssOptions>()!;
+var ossSptions = publicConfiguration.GetSection(DccConstants.OssKey).Get<OssOptions>();
 builder.Services.AddObjectStorage(option => option.UseAliyunStorage(options =>
 {
+    if (ossSptions is null)
+        return;
+
     options.AccessKeyId = ossSptions.AccessId;
     options.AccessKeySecret = ossSptions.AccessSecret;
     options.Endpoint = ossSptions.Endpoint;
@@ -76,27 +79,61 @@ builder.Services.AddScoped(serviceProvider =>
 
 builder.Services.AddAutoInject();
 builder.Services.AddDaprClient();
+
+var standaloneOptions = builder.Configuration.GetSection(StandaloneAuthOptions.SectionName).Get<StandaloneAuthOptions>() ?? new StandaloneAuthOptions();
+builder.Services.Configure<StandaloneAuthOptions>(builder.Configuration.GetSection(StandaloneAuthOptions.SectionName));
+
 builder.Services.AddAuthorization();
-builder.Services.AddAuthentication(options =>
+if (standaloneOptions.Enabled)
 {
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer("Bearer", options =>
-{
-    options.Authority = masaStackConfig.GetSsoDomain();
-    options.RequireHttpsMetadata = false;
-    options.TokenValidationParameters.ValidateAudience = false;
-    options.MapInboundClaims = false;
-    options.BackchannelHttpHandler = new HttpClientHandler
+    if (string.IsNullOrWhiteSpace(standaloneOptions.JwtSecret))
+        throw new Exception("Standalone:JwtSecret 不能为空");
+
+    builder.Services.AddSingleton<StandaloneTokenService>();
+    builder.Services.AddAuthentication(options =>
     {
-        ServerCertificateCustomValidationCallback = (
-            sender,
-            certificate,
-            chain,
-            sslPolicyErrors) => true
-    };
-});
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer("Bearer", options =>
+    {
+        options.RequireHttpsMetadata = false;
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = standaloneOptions.Issuer,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(standaloneOptions.JwtSecret)),
+            ClockSkew = TimeSpan.FromSeconds(30)
+        };
+    });
+}
+else
+{
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer("Bearer", options =>
+    {
+        options.Authority = masaStackConfig.GetSsoDomain();
+        options.RequireHttpsMetadata = false;
+        options.TokenValidationParameters.ValidateAudience = false;
+        options.MapInboundClaims = false;
+        options.BackchannelHttpHandler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = (
+                sender,
+                certificate,
+                chain,
+                sslPolicyErrors) => true
+        };
+    });
+}
 
 builder.Services
     .AddValidatorsFromAssemblyContaining<AddConfigObjectDto>()
@@ -205,6 +242,27 @@ var app = builder.AddServices(config =>
         builder.AddFluentValidationAutoValidation();
     };
 });
+
+if (standaloneOptions.Enabled)
+{
+    app.MapPost("/api/v1/standalone/login", (StandaloneLoginRequest request, StandaloneTokenService tokenService, IMasaStackConfig config) =>
+    {
+        if (string.IsNullOrWhiteSpace(request.UserName)
+            || request.UserName != standaloneOptions.AdminUserName
+            || request.Password != standaloneOptions.AdminPassword)
+        {
+            return Results.Json(new { code = 401, message = "用户名或密码错误" }, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        var accessToken = tokenService.CreateToken(request.UserName, config.Environment, config.GetDefaultUserId());
+        return Results.Ok(new StandaloneLoginResult
+        {
+            AccessToken = accessToken,
+            ExpiresIn = standaloneOptions.TokenExpireMinutes * 60,
+            UserId = config.GetDefaultUserId()
+        });
+    }).AllowAnonymous();
+}
 
 app.UseMasaExceptionHandler(opt =>
 {

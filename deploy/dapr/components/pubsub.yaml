@@ -1,0 +1,14 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+  namespace: default
+spec:
+  type: pubsub.redis
+  version: v1
+  metadata:
+    # 注意：这里必须填 Dapr sidecar 容器内可访问的 Redis 地址与密码
+    - name: redisHost
+      value: "redis:6379"
+    - name: redisPassword
+      value: ""

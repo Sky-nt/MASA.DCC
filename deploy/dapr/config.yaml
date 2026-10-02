@@ -1,0 +1,9 @@
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: masa-config
+spec:
+  tracing:
+    samplingRate: "0"
+  metrics:
+    enabled: false

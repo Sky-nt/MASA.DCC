@@ -1,0 +1,113 @@
+name: masa-dcc
+
+# ------------------------------------------------------------------
+# 公共环境变量（两个应用共用）。MASA_STACK 中 dcc.service.domain 指向
+# 本服务自身，其余服务用 127.0.0.1:1 占位（独立部署下不会被调用）。
+# ------------------------------------------------------------------
+x-masa-env: &masa-env
+  TZ: "Asia/Shanghai"
+  ASPNETCORE_ENVIRONMENT: "Production"
+  MASA_ENVIRONMENT: "${MASA_ENVIRONMENT}"
+  MASA_VERSION: "${MASA_VERSION}"
+  IS_DEMO: "${IS_DEMO}"
+  DOMAIN_NAME: "${DOMAIN_NAME}"
+  MASA_NAMESPACE: "${MASA_NAMESPACE}"
+  MASA_CLUSTER: "${MASA_CLUSTER}"
+  OTLP_URL: "${OTLP_URL}"
+  ADMIN_PWD: "${ADMIN_PWD}"
+  DCC_SECRET: "${DCC_SECRET}"
+  SUFFIX_IDENTITY: ""
+  CONNECTIONSTRING: '{"DbType":"MySql","Server":"${MYSQL_HOST}","Port":${MYSQL_PORT},"Database":"${DCC_DATABASE}","UserId":"${MYSQL_USER}","Password":"${MYSQL_PASSWORD}"}'
+  REDIS: '{"RedisHost":"${REDIS_HOST}","RedisPort":${REDIS_PORT},"RedisDb":${REDIS_DB},"RedisPassword":"${REDIS_PASSWORD}"}'
+  ELASTIC: '{"Nodes":[],"Index":"","UserName":"","Password":""}'
+  MASA_STACK: '[{"id":"auth","name":"Auth","service":{"name":"Auth.Service","id":"auth-service","domain":"http://127.0.0.1:1"},"web":{"name":"Auth.Web","id":"auth-web","domain":"http://127.0.0.1:1"},"sso":{"name":"Auth.SSO","id":"auth-sso","domain":"http://127.0.0.1:1"}},{"id":"pm","name":"PM","service":{"name":"PM.Service","id":"pm-service","domain":"http://127.0.0.1:1"},"web":{"name":"PM.Web","id":"pm-web","domain":"http://127.0.0.1:1"}},{"id":"mc","name":"MC","service":{"name":"MC.Service","id":"mc-service","domain":"http://127.0.0.1:1"},"web":{"name":"MC.Web","id":"mc-web","domain":"http://127.0.0.1:1"}},{"id":"dcc","name":"DCC","service":{"name":"Dcc.Service","id":"dcc-service","domain":"${DCC_SERVICE_DOMAIN}"},"web":{"name":"DCC.Web","id":"dcc-web","domain":"http://127.0.0.1:1"}}]'
+  Standalone__Enabled: "${STANDALONE_ENABLED}"
+  Standalone__JwtSecret: "${STANDALONE_JWT_SECRET}"
+  Standalone__AdminUserName: "${STANDALONE_ADMIN_USER}"
+  Standalone__AdminPassword: "${STANDALONE_ADMIN_PASSWORD}"
+  Standalone__TokenExpireMinutes: "${STANDALONE_TOKEN_EXPIRE_MINUTES}"
+
+services:
+  # ---------------- Dapr Placement ----------------
+  dapr-placement:
+    image: daprio/dapr:1.14.0
+    container_name: masa-dapr-placement
+    restart: unless-stopped
+    command: ["./placement", "-port", "50005", "-log-level", "warn"]
+    networks:
+      - masa-network
+
+  # ---------------- DCC 服务端 API ----------------
+  masa-dcc-service:
+    image: ${DCC_SERVICE_IMAGE}
+    build:
+      context: ..
+      dockerfile: src/Services/Masa.Dcc.Service/Dockerfile
+    container_name: masa-dcc-service
+    restart: unless-stopped
+    environment:
+      <<: *masa-env
+      DAPR_HTTP_PORT: "3500"
+      DAPR_GRPC_PORT: "50001"
+      DAPR_APPID: masa-dcc-service
+    ports:
+      - "${DCC_SERVICE_PORT}:80"
+    networks:
+      - masa-network
+      - infra
+    depends_on:
+      - dapr-placement
+
+  # ---------------- DCC 服务端 Dapr Sidecar ----------------
+  masa-dcc-service-dapr:
+    image: daprio/daprd:1.14.0
+    container_name: masa-dcc-service-dapr
+    restart: unless-stopped
+    command: [
+      "./daprd",
+      "--app-id", "masa-dcc-service",
+      "--app-port", "80",
+      "--dapr-http-port", "3500",
+      "--dapr-grpc-port", "50001",
+      "--resources-path", "/components",
+      "--config", "/config/config.yaml",
+      "--placement-host-address", "dapr-placement:50005",
+      "--log-level", "warn"
+    ]
+    volumes:
+      - ./dapr/components:/components:ro
+      - ./dapr/config.yaml:/config/config.yaml:ro
+      - ./dapr/secrets:/secrets:ro
+    network_mode: "service:masa-dcc-service"
+    depends_on:
+      - masa-dcc-service
+      - dapr-placement
+    environment:
+      GOGC: "50"
+      GOMEMLIMIT: "384MiB"
+
+  # ---------------- DCC 管理后台 ----------------
+  masa-dcc-web:
+    image: ${DCC_WEB_IMAGE}
+    build:
+      context: ..
+      dockerfile: src/Web/Masa.Dcc.Web.Admin/Masa.Dcc.Web.Admin.Server/Dockerfile
+    container_name: masa-dcc-web
+    restart: unless-stopped
+    environment:
+      <<: *masa-env
+      ASPNETCORE_URLS: http://0.0.0.0:80
+    ports:
+      - "${DCC_WEB_PORT}:80"
+    networks:
+      - masa-network
+      - infra
+    depends_on:
+      - masa-dcc-service
+
+networks:
+  masa-network:
+    driver: bridge
+  infra:
+    external: true
+    name: ${INFRA_NETWORK}

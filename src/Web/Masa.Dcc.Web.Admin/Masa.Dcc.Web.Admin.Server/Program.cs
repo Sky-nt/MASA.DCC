@@ -1,4 +1,4 @@
-﻿// Copyright (c) MASA Stack All rights reserved.
+// Copyright (c) MASA Stack All rights reserved.
 // Licensed under the Apache License. See LICENSE.txt in the project root for license information.
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,6 +7,12 @@ await builder.Services.AddMasaStackComponentsAsync(project: MasaStackProject.DCC
 
 var masaStackConfig = builder.Services.GetMasaStackConfig();
 builder.Services.AddValidatorsFromAssembly(typeof(LabelValueModel).Assembly, includeInternalTypes: true);
+
+var standaloneSection = builder.Configuration.GetSection(StandaloneOptions.SectionName);
+var standaloneOptions = standaloneSection.Get<StandaloneOptions>() ?? new StandaloneOptions();
+builder.Services.Configure<StandaloneOptions>(standaloneSection);
+if (standaloneOptions.Enabled)
+    DccHttpClientCallerBase.UseStandaloneAuth = true;
 
 MasaOpenIdConnectOptions masaOpenIdConnectOptions = new MasaOpenIdConnectOptions
 {
@@ -30,7 +36,7 @@ builder.Services.AddDccApiGateways(option =>
 
 StaticWebAssetsLoader.UseStaticWebAssets(builder.Environment, builder.Configuration);
 
-if (!builder.Environment.IsDevelopment())
+if (!builder.Environment.IsDevelopment() && !standaloneOptions.Enabled)
 {
     builder.WebHost.UseKestrel(option =>
     {
@@ -46,7 +52,28 @@ builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 
 IdentityModelEventSource.ShowPII = true;
-builder.Services.AddMasaOpenIdConnect(masaOpenIdConnectOptions);
+
+if (standaloneOptions.Enabled)
+{
+    builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+        .AddCookie(options =>
+        {
+            options.LoginPath = "/login";
+            options.Cookie.Name = "masa_dcc_standalone";
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(standaloneOptions.TokenExpireMinutes);
+            options.SlidingExpiration = true;
+        });
+    builder.Services.AddAuthorization(options =>
+    {
+        options.FallbackPolicy = new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .Build();
+    });
+}
+else
+{
+    builder.Services.AddMasaOpenIdConnect(masaOpenIdConnectOptions);
+}
 
 var app = builder.Build();
 
@@ -62,7 +89,8 @@ else
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+if (!standaloneOptions.Enabled)
+    app.UseHttpsRedirection();
 
 app.UseStaticFiles();
 

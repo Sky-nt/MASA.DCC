@@ -1,4 +1,4 @@
-﻿// Copyright (c) MASA Stack All rights reserved.
+// Copyright (c) MASA Stack All rights reserved.
 // Licensed under the Apache License. See LICENSE.txt in the project root for license information.
 
 using System.Text.Encodings.Web;
@@ -141,10 +141,30 @@ public static class IHostExtensions
         string contentRootPath,
         InitConfigObjectDomainService configObjectDomainService)
     {
-        var pmClient = service.GetRequiredService<IPmClient>();
-        var envClusters = await pmClient.ClusterService.GetEnvironmentClustersAsync();
-        if (envClusters == null || envClusters.Count == 0)
-            throw new UserFriendlyException("pm环境数据未初始化");
+        var envClusters = new List<EnvironmentClusterModel>();
+        try
+        {
+            var pmClient = service.GetRequiredService<IPmClient>();
+            envClusters = await pmClient.ClusterService.GetEnvironmentClustersAsync() ?? new List<EnvironmentClusterModel>();
+        }
+        catch (Exception ex)
+        {
+            service.GetService<ILoggerFactory>()?
+                .CreateLogger("Masa.Dcc.SeedData")
+                .LogWarning(ex, "PM 服务不可用，使用默认环境/集群初始化公共配置");
+        }
+
+        if (envClusters.Count == 0)
+        {
+            var environmentName = string.IsNullOrWhiteSpace(masaConfig.Environment) ? "Production" : masaConfig.Environment;
+            envClusters.Add(new EnvironmentClusterModel
+            {
+                Id = 1,
+                EnvironmentName = environmentName,
+                ClusterName = masaConfig.Cluster
+            });
+        }
+
         foreach (var environment in envClusters)
         {
             await InitEnvConfigObjects(environment.Id, environment.EnvironmentName, service, context, masaConfig, contentRootPath, configObjectDomainService);

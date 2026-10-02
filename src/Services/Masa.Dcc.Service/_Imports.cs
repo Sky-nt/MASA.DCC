@@ -1,7 +1,8 @@
-﻿// Copyright (c) MASA Stack All rights reserved.
+// Copyright (c) MASA Stack All rights reserved.
 // Licensed under the Apache License. See LICENSE.txt in the project root for license information.
 
 global using System.Reflection;
+global using System.Text;
 global using System.Text.Json;
 global using System.Text.Json.Nodes;
 global using System.Xml.Linq;
@@ -47,6 +48,7 @@ global using Masa.Dcc.Infrastructure.EFCore;
 global using Masa.Dcc.Infrastructure.Repository.App;
 global using Masa.Dcc.Service.Admin.Infrastructure;
 global using Masa.Dcc.Service.Admin.Infrastructure.Middleware;
+global using Masa.Dcc.Service.Admin.Infrastructure.StandaloneAuth;
 global using Microsoft.AspNetCore.Authentication.JwtBearer;
 global using Microsoft.AspNetCore.Mvc;
 global using Microsoft.EntityFrameworkCore;

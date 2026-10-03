@@ -1,4 +1,4 @@
-FROM registry.cn-hangzhou.aliyuncs.com/masa/dotnet_sdk:8.0 AS publish
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS publish
 WORKDIR /src
 COPY . .
 ENV CSPROJ="src/Services/Masa.Dcc.Service/Masa.Dcc.Service.Admin.csproj"

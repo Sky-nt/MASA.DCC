@@ -1,4 +1,4 @@
-// Copyright (c) MASA Stack All rights reserved.
+﻿// Copyright (c) MASA Stack All rights reserved.
 // Licensed under the Apache License. See LICENSE.txt in the project root for license information.
 
 var builder = WebApplication.CreateBuilder(args);
@@ -303,7 +303,9 @@ app.UseEndpoints(endpoints =>
 {
     endpoints.MapSubscribeHandler();
 });
-app.UseHttpsRedirection();
+// 纯 HTTP 容器部署（Standalone 模式）下关闭 HTTPS 跳转，避免每请求刷 warning
+if (!standaloneOptions.Enabled)
+    app.UseHttpsRedirection();
 
 app.UseI18n();
 

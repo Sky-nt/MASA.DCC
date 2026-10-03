@@ -211,7 +211,14 @@ builder.Services
 #endif   
     .AddDomainEventBus(options =>
     {
-        var connStr = masaStackConfig.GetConnectionString(MasaStackProject.DCC.Name);
+        // 库名直接取 CONNECTIONSTRING 中的 Database（如 masa）
+        var connStr = masaStackConfig.GetConnectionString(dbModel.Database);
+
+        // 可选：通过 DB_SCHEMA 指定表所在 schema（如 dcc），迁移与表都会落在该 schema
+        var dbSchema = builder.Configuration.GetValue<string>("DB_SCHEMA");
+        if (!string.IsNullOrWhiteSpace(dbSchema))
+            connStr = $"{connStr};Search Path={dbSchema}";
+
         if (isPgsql)
             DccDbContext.RegistAssembly(Assembly.Load("Masa.Dcc.Infrastructure.EFCore.PostgreSql"));
         else

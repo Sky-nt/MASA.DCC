@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================
 # MASA DCC 运行/维护脚本（不构建、不推送，只拉镜像并操作编排）
+# 依赖：docker、docker-compose（v2）
 #
 # 用法：
 #   ./run.sh            登录 + 拉取镜像 + 启动编排（默认）
@@ -25,6 +26,10 @@ set -a; . ./.env; set +a
 : "${REGISTRY:?}"; : "${REGISTRY_USER:?}"; : "${REGISTRY_PASSWORD:?}"; : "${IMAGE_TAG:?}"
 export REGISTRY REGISTRY_NAMESPACE IMAGE_TAG
 
+command -v docker-compose >/dev/null 2>&1 || die "未安装 docker-compose"
+docker-compose version 2>/dev/null | grep -q "version v2" \
+  || die "docker-compose 不是 v2（v1 不支持本编排文件），请升级到 Compose v2"
+
 login() {
   log "登录镜像仓库 ${REGISTRY}"
   echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY}" -u "${REGISTRY_USER}" --password-stdin
@@ -33,27 +38,27 @@ login() {
 case "${1:-up}" in
   pull)
     login
-    docker compose pull
+    docker-compose pull
     ;;
   up)
     login
-    docker compose pull
-    docker compose up -d --remove-orphans
-    docker compose ps
+    docker-compose pull
+    docker-compose up -d --remove-orphans
+    docker-compose ps
     ;;
   down)
-    docker compose down
+    docker-compose down
     ;;
   restart)
-    docker compose restart
+    docker-compose restart
     ;;
   ps)
-    docker compose ps
+    docker-compose ps
     ;;
   logs)
     shift || true
     if [ "$#" -eq 0 ]; then set -- masa-dcc-service; fi
-    docker compose logs -f --tail=200 "$@"
+    docker-compose logs -f --tail=200 "$@"
     ;;
   *)
     echo "用法: ./run.sh [up|pull|down|restart|ps|logs [服务名]]"

@@ -3,17 +3,21 @@
 # MASA DCC 一键部署脚本（在 Linux Docker 服务器上执行）
 #
 # 流程：拉取源码(SSH) -> 构建镜像 -> 推送镜像仓库 -> 启动编排
+# 依赖：git、docker、docker-compose（v2）
 #
 # 用法：
 #   ./deploy.sh              完整流程
 #   ./deploy.sh --no-push    只构建，不推送
 #   ./deploy.sh --no-build   不构建，直接推送已有镜像并启动
-#   ./deploy.sh -h           查看帮助
 # ============================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
+
+log()  { printf '\033[32m[%s] %s\033[0m\n' "$(date +%H:%M:%S)" "$*"; }
+warn() { printf '\033[33m[WARN] %s\033[0m\n' "$*" >&2; }
+die()  { printf '\033[31m[ERROR] %s\033[0m\n' "$*" >&2; exit 1; }
 
 SKIP_BUILD=0
 SKIP_PUSH=0
@@ -21,18 +25,12 @@ for arg in "$@"; do
   case "${arg}" in
     --no-build) SKIP_BUILD=1 ;;
     --no-push)  SKIP_PUSH=1 ;;
-    -h|--help)
-      echo "用法: ./deploy.sh [--no-build] [--no-push]"
-      exit 0 ;;
-    *) echo "未知参数: ${arg}"; exit 1 ;;
+    -h|--help)  echo "用法: ./deploy.sh [--no-build] [--no-push]"; exit 0 ;;
+    *)          echo "未知参数: ${arg}"; exit 1 ;;
   esac
 done
 
-log()  { printf '\033[32m[%s] %s\033[0m\n' "$(date +%H:%M:%S)" "$*"; }
-warn() { printf '\033[33m[WARN] %s\033[0m\n' "$*" >&2; }
-die()  { printf '\033[31m[ERROR] %s\033[0m\n' "$*" >&2; exit 1; }
-
-# ---------- 0. 读取配置 & 依赖检查 ----------
+# ---------- 0. 配置与依赖 ----------
 [ -f .env ] || die "缺少 .env（需与本脚本同目录）"
 set -a; . ./.env; set +a
 
@@ -44,15 +42,16 @@ set -a; . ./.env; set +a
 SERVICE_IMAGE="${REGISTRY}/${REGISTRY_NAMESPACE}/masa-dcc-service:${IMAGE_TAG}"
 WEB_IMAGE="${REGISTRY}/${REGISTRY_NAMESPACE}/masa-dcc-web:${IMAGE_TAG}"
 
-command -v git    >/dev/null 2>&1 || die "未安装 git"
-command -v docker >/dev/null 2>&1 || die "未安装 docker"
-docker compose version >/dev/null 2>&1 || die "未安装 docker compose (v2)"
+command -v git            >/dev/null 2>&1 || die "未安装 git"
+command -v docker         >/dev/null 2>&1 || die "未安装 docker"
+command -v docker-compose >/dev/null 2>&1 || die "未安装 docker-compose"
+docker-compose version 2>/dev/null | grep -q "version v2" \
+  || die "docker-compose 不是 v2（v1 不支持本编排文件），请升级到 Compose v2"
 
 docker network inspect "${INFRA_NETWORK}" >/dev/null 2>&1 \
-  || die "外部网络 ${INFRA_NETWORK} 不存在。请用 'docker network ls' 确认后修改 .env"
+  || die "外部网络 ${INFRA_NETWORK} 不存在。请用 'docker network ls' 确认后修改 .env 的 INFRA_NETWORK"
 docker network inspect "${INFRA_NETWORK}" -f '{{range .Containers}}{{.Name}} {{end}}' \
   | grep -q "${REDIS_HOST}" || warn "网络 ${INFRA_NETWORK} 内未见名为 ${REDIS_HOST} 的容器，请确认 REDIS_HOST/REDIS_PORT 是否正确"
-# PostgreSQL 由 docker-compose 内置容器提供，无需检查外部网络
 
 case "${STANDALONE_JWT_SECRET}" in
   please-change*) warn "STANDALONE_JWT_SECRET 仍是默认值，生产环境请改成随机串" ;;
@@ -96,8 +95,8 @@ fi
 # ---------- 4. 启动编排 ----------
 export REGISTRY REGISTRY_NAMESPACE IMAGE_TAG
 log "启动编排（镜像标签 ${IMAGE_TAG}）"
-docker compose up -d --remove-orphans
-docker compose ps
+docker-compose up -d --remove-orphans
+docker-compose ps
 
 echo
 log "部署完成"

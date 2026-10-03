@@ -3,7 +3,7 @@ name: masa-dcc
 # ------------------------------------------------------------------
 # 服务器侧编排：只使用镜像仓库中的镜像，不在服务器上构建
 # 镜像由 deploy.sh 构建并推送到 ${REGISTRY}/${REGISTRY_NAMESPACE}/
-# PostgreSQL 由本编排内置（DCC 源码只支持 PG / SqlServer）
+# PostgreSQL 为外部实例（.env 的 PG_* 配置），Redis 复用已有容器
 # ------------------------------------------------------------------
 
 # 公共环境变量（服务端 API 与管理后台共用）
@@ -23,6 +23,7 @@ x-masa-env: &masa-env
   DCC_SECRET: "${DCC_SECRET}"
   SUFFIX_IDENTITY: ""
   CONNECTIONSTRING: '{"DbType":"PostgreSQL","Server":"${PG_HOST}","Port":${PG_PORT},"Database":"${PG_DATABASE}","UserId":"${PG_USER}","Password":"${PG_PASSWORD}"}'
+  DB_SCHEMA: "${DB_SCHEMA}"
   REDIS: '{"RedisHost":"${REDIS_HOST}","RedisPort":${REDIS_PORT},"RedisDb":${REDIS_DB},"RedisPassword":"${REDIS_PASSWORD}"}'
   ELASTIC: '{"Nodes":[],"Index":"","UserName":"","Password":""}'
   MASA_STACK: '[{"id":"auth","name":"Auth","service":{"name":"Auth.Service","id":"auth-service","domain":"http://127.0.0.1:1"},"web":{"name":"Auth.Web","id":"auth-web","domain":"http://127.0.0.1:1"},"sso":{"name":"Auth.SSO","id":"auth-sso","domain":"http://127.0.0.1:1"}},{"id":"pm","name":"PM","service":{"name":"PM.Service","id":"pm-service","domain":"http://127.0.0.1:1"},"web":{"name":"PM.Web","id":"pm-web","domain":"http://127.0.0.1:1"}},{"id":"mc","name":"MC","service":{"name":"MC.Service","id":"mc-service","domain":"http://127.0.0.1:1"},"web":{"name":"MC.Web","id":"mc-web","domain":"http://127.0.0.1:1"}},{"id":"dcc","name":"DCC","service":{"name":"Dcc.Service","id":"dcc-service","domain":"${DCC_SERVICE_DOMAIN}"},"web":{"name":"DCC.Web","id":"dcc-web","domain":"http://127.0.0.1:1"}}]'
@@ -33,26 +34,6 @@ x-masa-env: &masa-env
   Standalone__TokenExpireMinutes: "${STANDALONE_TOKEN_EXPIRE_MINUTES}"
 
 services:
-  # ---------------- PostgreSQL（内置，自动建 dcc 库）----------------
-  masa-dcc-postgres:
-    image: postgres:16-alpine
-    container_name: masa-dcc-postgres
-    restart: unless-stopped
-    environment:
-      TZ: "Asia/Shanghai"
-      POSTGRES_USER: "${PG_USER}"
-      POSTGRES_PASSWORD: "${PG_PASSWORD}"
-      POSTGRES_DB: "${PG_DATABASE}"
-    volumes:
-      - masa-dcc-pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DATABASE}"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    networks:
-      - masa-network
-
   # ---------------- Dapr Placement ----------------
   dapr-placement:
     image: daprio/dapr:1.14.0
@@ -78,8 +59,6 @@ services:
       - masa-network
       - baota_net
     depends_on:
-      masa-dcc-postgres:
-        condition: service_healthy
       dapr-placement:
         condition: service_started
 
@@ -135,6 +114,3 @@ networks:
   baota_net:
     external: true
     name: ${INFRA_NETWORK}
-
-volumes:
-  masa-dcc-pgdata:

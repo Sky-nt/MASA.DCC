@@ -21,9 +21,10 @@ await builder.Services.AddMasaStackConfigAsync(project: MasaStackProject.DCC, ap
 var masaStackConfig = builder.Services.GetMasaStackConfig();
 var connStr = masaStackConfig.GetValue(MasaStackConfigConstant.CONNECTIONSTRING);
 var dbModel = JsonSerializer.Deserialize<DbModel>(connStr)!;
-bool isPgsql = string.Equals(dbModel.DbType, "postgresql", StringComparison.CurrentCultureIgnoreCase);
+// DbModel.DbType 仅存在于较新的 StackSdks 包，这里直接从连接串 JSON 原文读取，避免包版本耦合
+var dbType = JsonSerializer.Deserialize<JsonNode>(connStr)?["DbType"]?.ToString();
+bool isPgsql = string.Equals(dbType, "postgresql", StringComparison.CurrentCultureIgnoreCase);
 var publicConfiguration = builder.Services.GetMasaConfiguration().ConfigurationApi.GetPublic();
-StackExchangeRedisInstrumentation redisInstrumentation = default!;
 
 var ossSptions = publicConfiguration.GetSection(DccConstants.OssKey).Get<OssOptions>();
 builder.Services.AddObjectStorage(option => option.UseAliyunStorage(options =>
@@ -41,24 +42,6 @@ builder.Services.AddObjectStorage(option => option.UseAliyunStorage(options =>
         RegionId = ossSptions.RegionId
     };
 }));
-
-builder.Services.AddObservable(builder.Logging, new MasaObservableOptions
-{
-    ServiceNameSpace = builder.Environment.EnvironmentName,
-    ServiceVersion = masaStackConfig.Version,
-    ServiceName = masaStackConfig.GetServiceId(MasaStackProject.DCC),
-    ServiceInstanceId = builder.Configuration.GetValue<string>("HOSTNAME")!
-}, masaStackConfig.OtlpUrl, true, traceInstrumentConfig: traceBuilder =>
-{
-    traceBuilder.AddRedisInstrumentation(options =>
-    {
-        options.SetVerboseDatabaseStatements = true;
-    })
-    .ConfigureRedisInstrumentation(instrumentation =>
-    {
-        redisInstrumentation = instrumentation;
-    });
-});
 
 builder.Services.AddMasaIdentity(options =>
 {
@@ -166,18 +149,17 @@ var redisOption = new RedisConfigurationOptions
 
 builder.Services.AddMultilevelCache(distributedCacheAction: distributedCacheOptions =>
 {
-    distributedCacheOptions.UseStackExchangeRedisCache(redisOption, connectConfig: connect => redisInstrumentation.AddConnection(connect));
+    distributedCacheOptions.UseStackExchangeRedisCache(redisOption);
 }, options =>
 {
     options.SubscribeKeyPrefix = "masa.dcc:";
     options.SubscribeKeyType = SubscribeKeyType.SpecificPrefix;
 });
 
-builder.Services.AddPmClient(masaStackConfig.GetPmServiceDomain());
-builder.Services.AddAuthClient(authServiceBaseAddress: masaStackConfig.GetAuthServiceDomain(), redisOption, connectConfig: connect => redisInstrumentation.AddConnection(connect));
+// 断开 MASA Stack 生态：Pm/Auth 客户端替换为本地实现，不再请求 PM/Auth 服务
+builder.Services.AddSingleton<StandaloneAppRegistry>();
+builder.Services.AddSingleton<IPmClient, StandalonePmClient>();
 
-
-var pmConnStr = masaStackConfig.GetConnectionString(MasaStackProject.PM.Name);
 builder.Services
 #if DEBUG
     // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -211,7 +193,14 @@ builder.Services
 #endif   
     .AddDomainEventBus(options =>
     {
-        var connStr = masaStackConfig.GetConnectionString(MasaStackProject.DCC.Name);
+        // 库名直接取 CONNECTIONSTRING 中的 Database（如 masa）
+        var connStr = masaStackConfig.GetConnectionString(dbModel.Database);
+
+        // 可选：通过 DB_SCHEMA 指定表所在 schema（如 dcc），迁移与表都会落在该 schema
+        var dbSchema = builder.Configuration.GetValue<string>("DB_SCHEMA");
+        if (!string.IsNullOrWhiteSpace(dbSchema))
+            connStr = $"{connStr};Search Path={dbSchema}";
+
         if (isPgsql)
             DccDbContext.RegistAssembly(Assembly.Load("Masa.Dcc.Infrastructure.EFCore.PostgreSql"));
         else
@@ -303,7 +292,9 @@ app.UseEndpoints(endpoints =>
 {
     endpoints.MapSubscribeHandler();
 });
-app.UseHttpsRedirection();
+// 纯 HTTP 容器部署（Standalone 模式）下关闭 HTTPS 跳转，避免每请求刷 warning
+if (!standaloneOptions.Enabled)
+    app.UseHttpsRedirection();
 
 app.UseI18n();
 

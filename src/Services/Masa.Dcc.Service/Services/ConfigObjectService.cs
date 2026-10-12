@@ -1,4 +1,4 @@
-﻿// Copyright (c) MASA Stack All rights reserved.
+// Copyright (c) MASA Stack All rights reserved.
 // Licensed under the Apache License. See LICENSE.txt in the project root for license information.
 
 namespace Masa.Dcc.Service.Admin.Services;
@@ -34,11 +34,11 @@ public class ConfigObjectService : ServiceBase
     }
 
     public async Task<List<ConfigObjectDto>> GetListAsync(
-        IEventBus eventBus, IAuthClient authClient, int envClusterId, int objectId, ConfigObjectType type, string configObjectName = "", bool getLatestRelease = false)
+        IEventBus eventBus, IUserContext userContext, int envClusterId, int objectId, ConfigObjectType type, string configObjectName = "", bool getLatestRelease = false)
     {
         var query = new ConfigObjectsQuery(envClusterId, objectId, type, configObjectName, getLatestRelease);
         await eventBus.PublishAsync(query);
-        query.Result = await authClient.FillUserNameAsync(query.Result);
+        query.Result = await query.Result.FillUserNameAsync(userContext.GetUser()?.UserName ?? "system");
         return query.Result;
     }
 

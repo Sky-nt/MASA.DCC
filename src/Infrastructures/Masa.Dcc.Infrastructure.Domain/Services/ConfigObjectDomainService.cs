@@ -1,4 +1,4 @@
-﻿// Copyright (c) MASA Stack All rights reserved.
+// Copyright (c) MASA Stack All rights reserved.
 // Licensed under the Apache License. See LICENSE.txt in the project root for license information.
 
 namespace Masa.Dcc.Infrastructure.Domain.Services;
@@ -656,8 +656,7 @@ public class ConfigObjectDomainService : DomainService
         var env = envs.FirstOrDefault(e => e.Name.ToLower() == environmentName.ToLower()) ?? throw new UserFriendlyException("Environment does not exist");
         var clusters = await _pmClient.ClusterService.GetListByEnvIdAsync(env.Id);
         var cluster = clusters.FirstOrDefault(c => c.Name.ToLower() == clusterName.ToLower()) ?? throw new UserFriendlyException("Cluster does not exist");
-        var apps = await _pmClient.AppService.GetListAsync();
-        var app = apps.FirstOrDefault(apps => apps.Identity.ToLower() == appId.ToLower()) ?? throw new UserFriendlyException("AppId does not exist");
+        var app = await _pmClient.AppService.GetByIdentityAsync(appId) ?? throw new UserFriendlyException("AppId does not exist");
 
         Expression<Func<ConfigObject, bool>> configObjectFilter = configObject =>
                     configObject.AppConfigObject.EnvironmentClusterId == cluster.Id &&

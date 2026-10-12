@@ -1,4 +1,4 @@
-﻿// Copyright (c) MASA Stack All rights reserved.
+// Copyright (c) MASA Stack All rights reserved.
 // Licensed under the Apache License. See LICENSE.txt in the project root for license information.
 
 namespace Masa.Dcc.Service.Admin.Services;
@@ -21,11 +21,11 @@ public class AppService : ServiceBase
         return pmClient.AppService.GetAsync(id);
     }
 
-    public async Task<List<LatestReleaseConfigModel>> GetLatestReleaseConfigByAppAsync(IEventBus eventBus, IAuthClient authClient, LatestReleaseConfigRequestDto<int> request)
+    public async Task<List<LatestReleaseConfigModel>> GetLatestReleaseConfigByAppAsync(IEventBus eventBus, IUserContext userContext, LatestReleaseConfigRequestDto<int> request)
     {
         var query = new AppLatestReleaseQuery(request.Items, request.EnvClusterId);
         await eventBus.PublishAsync(query);
-        return await authClient.FillUserNameAsync(query.Result);
+        return await query.Result.FillUserNameAsync(userContext.GetUser()?.UserName ?? "system");
     }
 
     public async Task<List<AppDetailModel>> GetListAsync(IPmClient pmClient)

@@ -8,7 +8,8 @@
   <ItemGroup>
     <PackageReference Include="Masa.BuildingBlocks.Ddd.Domain" Version="$(MasaFrameworkPackageVersion)" />
     <PackageReference Include="Masa.Contrib.Ddd.Domain" Version="$(MasaFrameworkPackageVersion)" />
-    <PackageReference Include="Masa.Contrib.StackSdks.Pm" Version="$(MasaStackSdksPackageVersion)" />
+    <!-- 仅保留 PM 的接口与模型（BuildingBlocks），不引入 HTTP 客户端实现（Contrib） -->
+    <PackageReference Include="Masa.BuildingBlocks.StackSdks.Pm" Version="$(MasaStackSdksPackageVersion)" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Abstractions" Version="$(DotnetVersion)" />
   </ItemGroup>
 

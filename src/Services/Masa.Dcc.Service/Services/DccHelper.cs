@@ -1,38 +1,36 @@
-﻿// Copyright (c) MASA Stack All rights reserved.
+// Copyright (c) MASA Stack All rights reserved.
 // Licensed under the Apache License. See LICENSE.txt in the project root for license information.
 
 namespace Masa.Dcc.Service.Admin.Services;
 
 public static class DccHelper
 {
-    public static async Task<List<LatestReleaseConfigModel>> FillUserNameAsync(this IAuthClient authClient,
-        List<LatestReleaseConfigModel> data)
+    /// <summary>
+    /// 独立部署模式下不再依赖 MASA Auth 服务回填用户名，
+    /// Standalone 只有内置管理员一个账号，发布人直接取当前请求用户（缺省 system）。
+    /// </summary>
+    public static Task<List<LatestReleaseConfigModel>> FillUserNameAsync(
+        this List<LatestReleaseConfigModel> data, string userName)
     {
-        var ids = data.Select(t => t.LastPublisherId).Distinct();
-        var users = await authClient.UserService.GetListByIdsAsync(ids.ToArray());
         foreach (var t in data)
         {
-            var u = users.FirstOrDefault(x => x.Id == t.LastPublisherId);
-            t.LastPublisher = u?.StaffDisplayName ?? u?.DisplayName;
+            t.LastPublisher = userName;
         }
 
-        return data;
+        return Task.FromResult(data);
     }
 
-    public static async Task<List<ConfigObjectDto>> FillUserNameAsync(this IAuthClient authClient,
-        List<ConfigObjectDto> data)
+    public static Task<List<ConfigObjectDto>> FillUserNameAsync(
+        this List<ConfigObjectDto> data, string userName)
     {
-        var ids = data.Where(x => x.LatestRelease != null).Select(t => t.LatestRelease!.LastPublisherId).Distinct();
-        var users = await authClient.UserService.GetListByIdsAsync(ids.ToArray());
         foreach (var t in data)
         {
             if (t.LatestRelease != null)
             {
-                var u = users.FirstOrDefault(x => x.Id == t.LatestRelease?.LastPublisherId);
-                t.LatestRelease.LastPublisher = u?.StaffDisplayName ?? u?.DisplayName;
+                t.LatestRelease.LastPublisher = userName;
             }
         }
 
-        return data;
+        return Task.FromResult(data);
     }
 }

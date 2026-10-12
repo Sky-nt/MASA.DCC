@@ -1,4 +1,4 @@
-﻿// Copyright (c) MASA Stack All rights reserved.
+// Copyright (c) MASA Stack All rights reserved.
 // Licensed under the Apache License. See LICENSE.txt in the project root for license information.
 
 namespace Masa.Dcc.Service.Admin.Services;
@@ -15,12 +15,12 @@ public class BizConfigService : ServiceBase
     }
 
     public async Task<List<LatestReleaseConfigModel>> GetLatestReleaseConfigByProjectAsync(IEventBus eventBus,
-        IAuthClient authClient,
+        IUserContext userContext,
         LatestReleaseConfigRequestDto<ProjectModel> request)
     {
         var query = new ProjectLatestReleaseQuery(request.Items, request.EnvClusterId);
         await eventBus.PublishAsync(query);
-        return await authClient.FillUserNameAsync(query.Result);
+        return await query.Result.FillUserNameAsync(userContext.GetUser()?.UserName ?? "system");
     }
 
     public async Task<BizConfigDto> AddAsync(IEventBus eventBus, AddObjectConfigDto dto)
